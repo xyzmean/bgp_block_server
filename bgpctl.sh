@@ -3,8 +3,7 @@
 
 PROJECT_DIR="/root/bgp_geo"
 CONFIG_FILE="$PROJECT_DIR/config.json"
-SERVICES_DIR="$PROJECT_DIR/allow-domains/Services"
-SUBNETS_DIR="$PROJECT_DIR/allow-domains/Subnets/IPv4"
+ALLOW_DOMAINS_DIR="$PROJECT_DIR/allow-domains"
 AS_PREFIXES_DIR="$PROJECT_DIR/as_prefixes"
 
 # Цвета
@@ -27,21 +26,9 @@ header() {
 }
 
 get_services() {
-    # Берём из всех директорий и объединяем
-    (
-        # Services
-        ls "$SERVICES_DIR"/*.lst 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.lst$//' | tr '[:upper:]' '[:lower:]'
-        # Subnets/IPv4
-        ls "$SUBNETS_DIR"/*.lst 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.lst$//' | tr '[:upper:]' '[:lower:]'
-        # Categories
-        ls "$PROJECT_DIR/allow-domains/Categories"/*.lst 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.lst$//' | tr '[:upper:]' '[:lower:]'
-        # Russia
-        echo "russia_inside"
-        echo "russia_outside"
-        # Ukraine
-        echo "ukraine_inside"
-        echo "ukraine_outside"
-    ) | sort -u
+    find "$ALLOW_DOMAINS_DIR" -name "*.lst" -not -path "*/.git/*" -not -path "*/src/*" -not -path "*/proto/*" 2>/dev/null | while read -r f; do
+        basename "$f" .lst | tr '[:upper:]' '[:lower:]'
+    done | sort -u
 }
 
 get_enabled_services() {
@@ -270,12 +257,12 @@ menu_services() {
         if [ $page -gt 0 ]; then
             echo "  p. Предыдущая страница"
         fi
-        echo -e "${B}[b]${NC} Назад"
+        echo -e "${B}[0]${NC} Назад"
         echo ""
-        echo -ne "${C}Выбор (номер или b):${NC} "
+        echo -ne "${C}Выбор (номер или 0):${NC} "
         read -r choice
 
-        if [ "$choice" = "b" ] || [ "$choice" = "B" ]; then
+        if [ "$choice" = "0" ]; then
             break
         elif [ "$choice" = "n" ] || [ "$choice" = "N" ]; then
             page=$((page + 1))
@@ -301,12 +288,12 @@ menu_services() {
                     echo "Действия:"
                     echo "  1. Включить"
                     echo "  2. Отключить"
-                    echo "  b. Назад"
+                    echo "  0. Назад"
                     echo ""
                     echo -ne "${C}Выбор:${NC} "
                     read -r action
 
-                    if [ "$action" = "b" ] || [ "$action" = "B" ]; then
+                    if [ "$action" = "0" ]; then
                         break
                     elif [ "$action" = "1" ]; then
                         toggle_service "$svc"
@@ -341,12 +328,12 @@ menu_as() {
         echo "Действия:"
         echo "  1. Добавить AS"
         echo "  2. Удалить AS"
-        echo "  b. Назад"
+        echo "  0. Назад"
         echo ""
         echo -ne "${C}Выбор:${NC} "
         read -r choice
 
-        if [ "$choice" = "b" ] || [ "$choice" = "B" ]; then
+        if [ "$choice" = "0" ]; then
             break
         fi
 
@@ -376,15 +363,50 @@ menu_custom() {
         header
         echo -e "${BOLD}[3] Кастомные маршруты${NC}"
         echo ""
+
+        # Показываем кастомные домены
+        local domains=$(python3 -c "
+import json
+c = json.load(open('$CONFIG_FILE'))
+for d, v in c.get('custom_domains', {}).items():
+    ips = ', '.join(v.get('ips', []))
+    slash24s = ', '.join(v.get('slash24s', []))
+    print(f'  {d} -> {slash24s}')
+" 2>/dev/null)
+        if [ -n "$domains" ]; then
+            echo -e "${BOLD}Домены:${NC}"
+            echo "$domains"
+        else
+            echo -e "${BOLD}Домены:${NC} (нет)"
+        fi
+        echo ""
+
+        # Показываем кастомные подсети
+        local subnets=$(python3 -c "
+import json
+c = json.load(open('$CONFIG_FILE'))
+for s, name in c.get('custom_subnets', {}).items():
+    print(f'  {s} ({name})')
+" 2>/dev/null)
+        if [ -n "$subnets" ]; then
+            echo -e "${BOLD}Подсети:${NC}"
+            echo "$subnets"
+        else
+            echo -e "${BOLD}Подсети:${NC} (нет)"
+        fi
+        echo ""
+
         echo "Действия:"
         echo "  1. Добавить домен"
         echo "  2. Добавить подсеть"
-        echo "  b. Назад"
+        echo "  3. Удалить домен"
+        echo "  4. Удалить подсеть"
+        echo "  0. Назад"
         echo ""
         echo -ne "${C}Выбор:${NC} "
         read -r choice
 
-        if [ "$choice" = "b" ] || [ "$choice" = "B" ]; then
+        if [ "$choice" = "0" ]; then
             break
         fi
 
@@ -409,7 +431,43 @@ if 'custom_subnets' not in c:
 c['custom_subnets']['$subnet'] = '$desc'
 with open('$CONFIG_FILE', 'w') as f:
     json.dump(c, f, indent=2)
-print(f"{G}[+]${NC} $subnet добавлен")
+print("[+] $subnet добавлен")
+EOF
+            echo ""
+            echo -e "${G}Нажмите Enter...${NC}"
+            read
+        elif [ "$choice" = "3" ]; then
+            echo -ne "Домен для удаления: "
+            read -r domain
+            python3 << EOF
+import json
+with open('$CONFIG_FILE') as f:
+    c = json.load(f)
+if '$domain' in c.get('custom_domains', {}):
+    del c['custom_domains']['$domain']
+    with open('$CONFIG_FILE', 'w') as f:
+        json.dump(c, f, indent=2)
+    print("[+] $domain удалён")
+else:
+    print("[-] $domain не найден")
+EOF
+            echo ""
+            echo -e "${G}Нажмите Enter...${NC}"
+            read
+        elif [ "$choice" = "4" ]; then
+            echo -ne "Подсеть для удаления: "
+            read -r subnet
+            python3 << EOF
+import json
+with open('$CONFIG_FILE') as f:
+    c = json.load(f)
+if '$subnet' in c.get('custom_subnets', {}):
+    del c['custom_subnets']['$subnet']
+    with open('$CONFIG_FILE', 'w') as f:
+        json.dump(c, f, indent=2)
+    print("[+] $subnet удалена")
+else:
+    print("[-] $subnet не найдена")
 EOF
             echo ""
             echo -e "${G}Нажмите Enter...${NC}"
