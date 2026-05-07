@@ -12,10 +12,10 @@ import ipaddress
 
 PROJECT_DIR = Path("/root/bgp_geo")
 ALLOW_DOMAINS = PROJECT_DIR / "allow-domains"
-SUBNETS_DIR = ALLOW_DOMAINS / "Subnets" / "IPv4"
-SERVICES_DIR = ALLOW_DOMAINS / "Services"
 AS_PREFIXES_DIR = PROJECT_DIR / "as_prefixes"
 CONFIG_FILE = PROJECT_DIR / "config.json"
+
+SKIP_DIRS = {'.git', '.github', 'src', 'proto', '__pycache__'}
 
 AS_PREFIXES_DIR.mkdir(exist_ok=True)
 
@@ -65,28 +65,34 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
+def discover_sources():
+    """Scan allow-domains/ recursively for all .lst files.
+    Returns {service_name: [('subnet'|'domain', path), ...]}
+    Directories named 'subnets' (any case) contain CIDR lists,
+    everything else contains domain lists.
+    """
+    sources = {}
+    if not ALLOW_DOMAINS.exists():
+        return sources
+    for lst_file in sorted(ALLOW_DOMAINS.rglob('*.lst')):
+        # Skip files inside skipped directories
+        parts = lst_file.relative_to(ALLOW_DOMAINS).parts
+        if any(p in SKIP_DIRS or p.startswith('.') for p in parts):
+            continue
+        # Determine type by nearest parent dir name
+        src_type = 'subnet' if lst_file.parent.name.lower() == 'subnets' else 'domain'
+        name = lst_file.stem.lower()
+        # -raw.lst files: use parent_dir as prefix (e.g. Russia/inside-raw.lst → russia_inside)
+        if name.endswith('-raw'):
+            parent = lst_file.parent.name.lower()
+            base = name[:-4]
+            name = f"{parent}_{base}"
+        sources.setdefault(name, []).append((src_type, lst_file))
+    return sources
+
+
 def get_available_services():
-    services = set()
-    # Services
-    if SERVICES_DIR.exists():
-        for f in SERVICES_DIR.glob("*.lst"):
-            services.add(f.stem.lower())
-    # Subnets/IPv4
-    if SUBNETS_DIR.exists():
-        for f in SUBNETS_DIR.glob("*.lst"):
-            services.add(f.stem.lower())
-    # Categories
-    categories_dir = ALLOW_DOMAINS / "Categories"
-    if categories_dir.exists():
-        for f in categories_dir.glob("*.lst"):
-            services.add(f.stem.lower())
-    # Russia
-    services.add("russia_inside")
-    services.add("russia_outside")
-    # Ukraine
-    services.add("ukraine_inside")
-    services.add("ukraine_outside")
-    return sorted(services)
+    return sorted(discover_sources().keys())
 
 
 def fetch_as_prefixes(as_number: str) -> set:
@@ -280,80 +286,33 @@ def cmd_generate(args):
     config = load_config()
     routes = set()
 
-    # От сервисов (Subnets/IPv4 - подсети, Services - домены для резолвинга)
+    # От сервисов — динамический поиск по allow-domains/
+    sources = discover_sources()
     for svc in config.get("services", []):
-        # Subnets/IPv4/*.lst - готовые подсети
-        subnet_file = SUBNETS_DIR / f"{svc}.lst"
-        if subnet_file.exists():
-            with open(subnet_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and '/' in line:
-                        routes.add(line)
-
-        # Services/*.lst - домены (резолвим в /24)
-        service_file = SERVICES_DIR / f"{svc}.lst"
-        if service_file.exists():
-            domains = [line.strip() for line in open(service_file) if line.strip()]
-            ips = resolve_domains(domains)
-            for ip in ips:
-                parts = ip.split('.')
-                routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-
-        # Categories/*.lst - домены (резолвим в /24)
-        category_file = ALLOW_DOMAINS / "Categories" / f"{svc}.lst"
-        if category_file.exists():
-            domains = [line.strip() for line in open(category_file) if line.strip()]
-            ips = resolve_domains(domains)
-            for ip in ips:
-                parts = ip.split('.')
-                routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-
-        # Russia/inside-raw.lst, Russia/outside-raw.lst
-        if svc == "russia_inside":
-            russia_file = ALLOW_DOMAINS / "Russia" / "inside-raw.lst"
-            if russia_file.exists():
-                domains = [line.strip() for line in open(russia_file) if line.strip()]
+        if svc not in sources:
+            # Старый формат ips_*.txt для совместимости
+            ip_file = PROJECT_DIR / f"ips_{svc}.txt"
+            if ip_file.exists():
+                with open(ip_file) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            parts = line.split('.')
+                            routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
+            continue
+        for src_type, src_path in sources[svc]:
+            if src_type == 'subnet':
+                with open(src_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and '/' in line:
+                            routes.add(line)
+            else:
+                domains = [line.strip() for line in open(src_path) if line.strip()]
                 ips = resolve_domains(domains)
                 for ip in ips:
                     parts = ip.split('.')
                     routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-        elif svc == "russia_outside":
-            russia_file = ALLOW_DOMAINS / "Russia" / "outside-raw.lst"
-            if russia_file.exists():
-                domains = [line.strip() for line in open(russia_file) if line.strip()]
-                ips = resolve_domains(domains)
-                for ip in ips:
-                    parts = ip.split('.')
-                    routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-
-        # Ukraine/inside-raw.lst, Ukraine/outside-raw.lst
-        if svc == "ukraine_inside":
-            ukraine_file = ALLOW_DOMAINS / "Ukraine" / "inside-raw.lst"
-            if ukraine_file.exists():
-                domains = [line.strip() for line in open(ukraine_file) if line.strip()]
-                ips = resolve_domains(domains)
-                for ip in ips:
-                    parts = ip.split('.')
-                    routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-        elif svc == "ukraine_outside":
-            ukraine_file = ALLOW_DOMAINS / "Ukraine" / "outside-raw.lst"
-            if ukraine_file.exists():
-                domains = [line.strip() for line in open(ukraine_file) if line.strip()]
-                ips = resolve_domains(domains)
-                for ip in ips:
-                    parts = ip.split('.')
-                    routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
-
-        # Старый формат ips_*.txt для совместимости
-        ip_file = PROJECT_DIR / f"ips_{svc}.txt"
-        if ip_file.exists():
-            with open(ip_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        parts = line.split('.')
-                        routes.add(f"{parts[0]}.{parts[1]}.{parts[2]}.0/24")
 
     # От AS
     for as_num in config.get("as_numbers", {}):

@@ -7,8 +7,8 @@ as_prefixes/*.txt
 # Конфигурация (генерируется локально)
 config.json
 
-# Внешние данные
-allow-domains/
+# Внешние данные (submodule — не удалять строку ниже)
+# allow-domains управляется через git submodule
 
 # Claude Code
 CLAUDE.md
