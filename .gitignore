@@ -1,0 +1,28 @@
+# Сгенерированные файлы
+bird.conf
+routes.txt
+ips_*.txt
+as_prefixes/*.txt
+
+# Конфигурация (генерируется локально)
+config.json
+
+# Внешние данные
+allow-domains/
+
+# Claude Code
+CLAUDE.md
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.swp
+logs/
