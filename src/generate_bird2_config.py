@@ -27,7 +27,7 @@ AS_LIST = {
 
 SUBNETS_DIR = Path("/root/bgp_geo/allow-domains/Subnets/IPv4")
 OUTPUT_DIR = Path("/root/bgp_geo")
-AS_PREFIXES_DIR = OUTPUT_DIR / "AS_prefixes"
+AS_PREFIXES_DIR = OUTPUT_DIR / "as_prefixes"
 
 SERVER_AS = 65200
 CLIENT_AS = 65433

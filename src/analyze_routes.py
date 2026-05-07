@@ -3,7 +3,7 @@ from pathlib import Path
 
 SUBNETS_DIR = Path("/root/bgp_geo/allow-domains/Subnets/IPv4")
 OUTPUT_DIR = Path("/root/bgp_geo")
-AS_PREFIXES_DIR = OUTPUT_DIR / "AS_prefixes"
+AS_PREFIXES_DIR = OUTPUT_DIR / "as_prefixes"
 
 SERVICES = {
     "meta", "twitter", "discord", "telegram",
@@ -75,5 +75,6 @@ print("-" * 60)
 print(f"  Подсети сервисов:     {sum(service_counts.values()):5d}")
 print(f"  IP от доменов:        {total_ips:5d}")
 print(f"  Префиксы из AS:       {sum(as_counts.values()):5d}")
-print(f"  ВСЕГО в BGP:          5951")
+total_bgp = sum(service_counts.values()) + total_ips + sum(as_counts.values())
+print(f"  ВСЕГО в BGP:          {total_bgp:5d}")
 print("=" * 60)
