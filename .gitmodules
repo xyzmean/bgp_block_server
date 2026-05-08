@@ -1,0 +1,3 @@
+[submodule "allow-domains"]
+	path = allow-domains
+	url = git@github.com:xyzmean/allow-domains.git
