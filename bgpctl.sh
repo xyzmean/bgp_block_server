@@ -242,7 +242,7 @@ show_status() {
 # Меню сервисов
 menu_services() {
     local page=0
-    local per_page=20
+    local per_page=50
 
     while true; do
         header
@@ -257,6 +257,11 @@ menu_services() {
         echo "$all_services" | tail -n +$((page * per_page + 1)) | head -n $per_page | nl -v $((page * per_page + 1)) -w2 -s'. '
 
         echo ""
+        if [ $total -gt $per_page ]; then
+            local cur_page=$((page + 1))
+            local total_pages=$(( (total + per_page - 1) / per_page ))
+            echo -e "  ${Y}Страница ${cur_page}/${total_pages} (${total} сервисов)${NC}"
+        fi
         if [ $((page * per_page + per_page)) -lt $total ]; then
             echo "  n. Следующая страница"
         fi
