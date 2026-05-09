@@ -390,15 +390,7 @@ protocol bgp client {{
     neighbor {neighbor_ip} as {neighbor_as};
     multihop;
     hold time 240;
-    ipv4 {{
-        import none;
-        export filter {{
-            if source = RTS_STATIC then {{
-                bgp_next_hop = {local_ip};
-                accept;
-            }}
-        }};
-    }};
+    ipv4 {{ import none; export all; }};
 }}
 """
 
